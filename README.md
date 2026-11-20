@@ -1,17 +1,23 @@
 # tapes-map-cassette
 
 A [tapes](https://github.com/papercomputeco/tapes) cassette named `map`. It
-serves 3-D coordinates for every tapes session, placed so that sessions about
+serves 2-D coordinates for every tapes session, placed so that sessions about
 similar things sit near each other.
 
 For each session it averages the session's span embeddings, L2-normalizes the
-average, projects all sessions to 3-D with UMAP (cosine metric, 15 neighbours,
+average, projects all sessions to 2-D with UMAP (cosine metric, 15 neighbours,
 `min_dist` 0.1, fixed random seed), then centres the result and scales it into
 [-1, 1]. It does this at startup and then once per `refresh.interval` (default
 1 hour), and keeps only the latest result in memory. It creates no tables.
 
 UMAP was chosen over PCA after measuring both on real tapes data: UMAP kept 36%
 of each session's true 10 nearest neighbours, and PCA kept 11%.
+
+The map is 2-D because the UI draws it on a 2-D canvas, and a third axis bought
+little. On 3,069 real sessions, 2-D kept 31.8% of the true 10 nearest neighbours
+(3-D: 36.3%), a session's neighbours shared its repository 44.1% of the time
+(3-D: 45.8%, against a ceiling of 46.5%), and
+trustworthiness was 0.896 (3-D: 0.917).
 
 ## Before you deploy: it reads another cassette's data
 
@@ -135,11 +141,12 @@ differ. The API prefix is `api`. Tapes republishes `/api/map/points` as
   "computed_at": "2026-11-20T17:45:58.459011Z",
   "model": "embeddinggemma",
   "method": "umap",
+  "dimensions": 2,
   "session_count": 7000,
   "points": [
     {
       "session_id": "00000000-0000-0000-0000-000000000001",
-      "x": -0.23, "y": -0.35, "z": -0.79,
+      "x": -0.23, "y": -0.35,
       "span_count": 17,
       "harness_id": "claude",
       "cwd": "/src/p0",

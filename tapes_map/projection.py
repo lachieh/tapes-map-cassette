@@ -8,6 +8,7 @@ import numpy as np
 import umap
 
 RANDOM_STATE = 42
+DIMENSIONS = 2
 
 
 @dataclass(frozen=True)
@@ -26,16 +27,16 @@ class SessionCentroid:
 
 
 def project(centroids: np.ndarray) -> np.ndarray:
-    """3-D coordinates in [-1, 1] that keep cosine neighbours of the rows close."""
+    """2-D coordinates in [-1, 1] that keep cosine neighbours of the rows close."""
     count = len(centroids)
     # UMAP needs at least two neighbours per point.
     if count < 3:
-        return np.zeros((count, 3))
+        return np.zeros((count, DIMENSIONS))
 
     norms = np.linalg.norm(centroids, axis=1, keepdims=True)
     unit = centroids / np.where(norms == 0, 1, norms)
     coords = umap.UMAP(
-        n_components=3,
+        n_components=DIMENSIONS,
         metric="cosine",
         n_neighbors=min(15, count - 1),
         min_dist=0.1,
@@ -80,19 +81,19 @@ def build_map(rows: list[SessionCentroid], computed_at: datetime) -> dict[str, A
         "computed_at": rfc3339(computed_at),
         "model": model,
         "method": "umap",
+        "dimensions": DIMENSIONS,
         "session_count": len(chosen),
         "points": [
             {
                 "session_id": str(row.session_id),
                 "x": float(x),
                 "y": float(y),
-                "z": float(z),
                 "span_count": row.span_count,
                 "harness_id": row.harness_id or "",
                 "cwd": row.cwd or "",
                 "title": title(row),
                 "last_seen_at": rfc3339(row.last_seen_at),
             }
-            for row, (x, y, z) in zip(chosen, coords, strict=True)
+            for row, (x, y) in zip(chosen, coords, strict=True)
         ],
     }

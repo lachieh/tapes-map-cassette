@@ -28,14 +28,13 @@ _POINT = {
         "session_id": {"type": "string", "format": "uuid"},
         "x": {"type": "number"},
         "y": {"type": "number"},
-        "z": {"type": "number"},
         "span_count": {"type": "integer"},
         "harness_id": {"type": "string"},
         "cwd": {"type": "string"},
         "title": {"type": "string"},
         "last_seen_at": {"type": "string", "format": "date-time"},
     },
-    "required": ["session_id", "x", "y", "z", "span_count", "harness_id", "cwd", "title", "last_seen_at"],
+    "required": ["session_id", "x", "y", "span_count", "harness_id", "cwd", "title", "last_seen_at"],
 }
 
 _MAP = {
@@ -44,10 +43,11 @@ _MAP = {
         "computed_at": {"type": "string", "format": "date-time"},
         "model": {"type": "string"},
         "method": {"type": "string", "enum": ["umap"]},
+        "dimensions": {"type": "integer", "const": 2},
         "session_count": {"type": "integer"},
         "points": {"type": "array", "items": {"$ref": "#/components/schemas/MapPoint"}},
     },
-    "required": ["computed_at", "model", "method", "session_count", "points"],
+    "required": ["computed_at", "model", "method", "dimensions", "session_count", "points"],
 }
 
 
@@ -65,9 +65,9 @@ def openapi_document(manifest: dict[str, Any]) -> dict[str, Any]:
             points_path(manifest): {
                 "get": {
                     "operationId": "getMapPoints",
-                    "summary": "3-D coordinates for every session",
+                    "summary": "2-D coordinates for every session",
                     "description": (
-                        "Each session's span embeddings averaged, projected to 3-D with UMAP "
+                        "Each session's span embeddings averaged, projected to 2-D with UMAP "
                         "(cosine), and scaled into [-1, 1]. Recomputed on an interval, not per request."
                     ),
                     "tags": ["map"],

@@ -74,12 +74,12 @@ def test_points_after_a_refresh(cassette):
     status, content_type, body = get(base + "/api/map/points")
     assert (status, content_type) == (200, "application/json")
     result = json.loads(body)
-    assert set(result) == {"computed_at", "model", "method", "session_count", "points"}
+    assert set(result) == {"computed_at", "model", "method", "dimensions", "session_count", "points"}
     assert result["computed_at"].endswith("Z")
-    assert (result["model"], result["method"], result["session_count"]) == ("embeddinggemma", "umap", 20)
+    assert (result["model"], result["method"], result["dimensions"], result["session_count"]) == ("embeddinggemma", "umap", 2, 20)
     point = result["points"][0]
-    assert set(point) == {"session_id", "x", "y", "z", "span_count", "harness_id", "cwd", "title", "last_seen_at"}
-    assert all(-1 <= p[axis] <= 1 for p in result["points"] for axis in "xyz")
+    assert set(point) == {"session_id", "x", "y", "span_count", "harness_id", "cwd", "title", "last_seen_at"}
+    assert all(-1 <= p[axis] <= 1 for p in result["points"] for axis in "xy")
     assert point["title"].startswith("session ")
 
 

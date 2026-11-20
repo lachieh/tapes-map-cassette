@@ -32,7 +32,7 @@ def session(n, model="embeddinggemma", **fields):
     return SessionCentroid(**(defaults | fields))
 
 
-def test_well_separated_clusters_stay_separated_in_3d():
+def test_well_separated_clusters_stay_separated_in_2d():
     vectors, labels = two_clusters()
     coords = project(vectors)
     a, b = coords[labels == 0], coords[labels == 1]
@@ -41,9 +41,9 @@ def test_well_separated_clusters_stay_separated_in_3d():
     assert gap > 2 * spread
 
 
-def test_coordinates_are_centred_and_within_unit_cube():
+def test_coordinates_are_centred_and_within_unit_square():
     coords = project(two_clusters()[0])
-    assert coords.shape == (120, 3)
+    assert coords.shape == (120, 2)
     assert np.isclose(np.abs(coords).max(), 1.0)
     assert np.allclose(coords.mean(axis=0), 0, atol=1e-6)
 
@@ -54,8 +54,8 @@ def test_projection_is_reproducible_for_the_same_input():
 
 
 def test_too_few_sessions_for_umap_sit_at_the_origin():
-    assert project(np.ones((2, 8))).tolist() == [[0, 0, 0], [0, 0, 0]]
-    assert project(np.empty((0, 8))).shape == (0, 3)
+    assert project(np.ones((2, 8))).tolist() == [[0, 0], [0, 0]]
+    assert project(np.empty((0, 8))).shape == (0, 2)
 
 
 def test_map_uses_only_the_model_with_most_spans():
@@ -72,13 +72,13 @@ def test_map_point_shape():
         "computed_at": "2026-11-01T12:00:00Z",
         "model": "embeddinggemma",
         "method": "umap",
+        "dimensions": 2,
         "session_count": 1,
         "points": [
             {
                 "session_id": "00000000-0000-0000-0000-000000000001",
                 "x": 0.0,
                 "y": 0.0,
-                "z": 0.0,
                 "span_count": 3,
                 "harness_id": "",
                 "cwd": "",
@@ -90,7 +90,7 @@ def test_map_point_shape():
 
 
 def test_empty_map():
-    assert build_map([], SEEN) == {"computed_at": "2026-11-01T12:00:00Z", "model": "", "method": "umap", "session_count": 0, "points": []}
+    assert build_map([], SEEN) == {"computed_at": "2026-11-01T12:00:00Z", "model": "", "method": "umap", "dimensions": 2, "session_count": 0, "points": []}
 
 
 def test_title_takes_the_first_non_blank_name():

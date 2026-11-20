@@ -133,7 +133,7 @@ def test_one_refresh_with_exactly_the_deployments_grants(provisioned):
     assert points[str(ids[1])]["title"] == "topic 1"
     assert first["last_seen_at"] == "2026-11-01T00:00:00Z"
 
-    coords = np.array([[p["x"], p["y"], p["z"]] for p in result["points"]])
+    coords = np.array([[p["x"], p["y"]] for p in result["points"]])
     topic = np.array([int(uuid.UUID(p["session_id"]).int - 1) % 2 for p in result["points"]])
     gap = np.linalg.norm(coords[topic == 0].mean(axis=0) - coords[topic == 1].mean(axis=0))
     assert gap > 0.5
