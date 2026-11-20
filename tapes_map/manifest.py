@@ -32,10 +32,22 @@ _POINT = {
         "harness_id": {"type": "string"},
         "cwd": {"type": "string"},
         "title": {"type": "string"},
+        "prompt": {"type": "string", "description": "The first genuine user prompt, cleaned, at most 200 characters."},
+        "started_at": {"type": "string", "format": "date-time"},
         "last_seen_at": {"type": "string", "format": "date-time"},
+        "ended_at": {"type": ["string", "null"], "format": "date-time"},
+        "status": {"type": "string"},
+        "model": {"type": "string"},
+        "parent_session_id": {"type": ["string", "null"], "format": "uuid"},
+        "turn_count": {"type": "integer"},
+        "duration_ns": {"type": "integer"},
+        "cost_usd": {"type": "number"},
+        "input_tokens": {"type": "integer"},
+        "output_tokens": {"type": "integer"},
+        "tool_error_count": {"type": "integer"},
     },
-    "required": ["session_id", "x", "y", "span_count", "harness_id", "cwd", "title", "last_seen_at"],
 }
+_POINT["required"] = list(_POINT["properties"])
 
 _MAP = {
     "type": "object",

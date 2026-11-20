@@ -80,7 +80,8 @@ def test_points_after_a_refresh(cassette):
     assert result["computed_at"].endswith("Z")
     assert (result["model"], result["method"], result["dimensions"], result["session_count"]) == ("embeddinggemma", "umap", 2, 20)
     point = result["points"][0]
-    assert set(point) == {"session_id", "x", "y", "span_count", "harness_id", "cwd", "title", "last_seen_at"}
+    schema = json.loads(get(base + "/openapi")[2])["components"]["schemas"]["MapPoint"]
+    assert set(point) == set(schema["required"]) == set(schema["properties"])
     assert all(-1 <= p[axis] <= 1 for p in result["points"] for axis in "xy")
     assert point["title"].startswith("session ")
 

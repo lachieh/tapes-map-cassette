@@ -20,6 +20,7 @@ pytestmark = [
 PROVISION = (Path(__file__).resolve().parent.parent / "provision.sql").read_text()
 EMBEDDINGS_VIEW = "search_contract_v1.span_embeddings"
 SESSIONS = "tapes_v1.sessions"
+TURNS = "tapes_v1.span_turns"
 
 # search-cassette's table, as its EnsureSchema creates it, and the contract
 # view's sessions shape reduced to the columns the map reads.
@@ -42,15 +43,42 @@ CREATE TABLE search.span_embeddings (
 ALTER TABLE search.span_embeddings OWNER TO cassette_search;
 CREATE SCHEMA tapes_v1;
 CREATE TABLE tapes_v1.sessions (
-    id                 UUID PRIMARY KEY,
-    harness_id         TEXT NOT NULL,
-    harness_session_id TEXT NOT NULL,
-    name               TEXT,
-    cwd                TEXT,
-    last_seen_at       TIMESTAMPTZ NOT NULL,
-    derived_title      TEXT,
-    display_name       TEXT
+    id                  UUID PRIMARY KEY,
+    harness_id          TEXT NOT NULL,
+    harness_session_id  TEXT NOT NULL,
+    name                TEXT,
+    cwd                 TEXT,
+    parent_session_id   UUID,
+    started_at          TIMESTAMPTZ NOT NULL DEFAULT '2026-10-31T00:00:00Z',
+    last_seen_at        TIMESTAMPTZ NOT NULL,
+    ended_at            TIMESTAMPTZ,
+    total_input_tokens  BIGINT NOT NULL DEFAULT 0,
+    total_output_tokens BIGINT NOT NULL DEFAULT 0,
+    total_cost_usd      NUMERIC(12,4) NOT NULL DEFAULT 0,
+    turn_count          INT NOT NULL DEFAULT 0,
+    derived_status      TEXT NOT NULL DEFAULT 'unknown',
+    tool_error_count    INT NOT NULL DEFAULT 0,
+    derived_title       TEXT,
+    derived_model       TEXT NOT NULL DEFAULT '',
+    duration_ns         BIGINT,
+    display_name        TEXT
 );
+CREATE TABLE tapes_v1.span_turns (
+    org_id              UUID NOT NULL DEFAULT '00000000-0000-0000-0000-00000000000a',
+    trace_id            TEXT NOT NULL,
+    session_id          UUID,
+    user_prompt         TEXT NOT NULL DEFAULT '',
+    synthetic           TEXT NOT NULL DEFAULT '',
+    status              TEXT NOT NULL DEFAULT 'ok',
+    started_at          TIMESTAMPTZ NOT NULL,
+    ended_at            TIMESTAMPTZ,
+    duration_ns         BIGINT NOT NULL DEFAULT 0,
+    total_input_tokens  BIGINT NOT NULL DEFAULT 0,
+    total_output_tokens BIGINT NOT NULL DEFAULT 0,
+    total_cost_usd      NUMERIC(12,4) NOT NULL DEFAULT 0,
+    PRIMARY KEY (org_id, trace_id)
+);
+CREATE INDEX ON tapes_v1.span_turns (session_id, started_at);
 """
 
 
@@ -90,6 +118,20 @@ def seed(admin: psycopg.Connection, sessions: int, spans_per_session: int) -> li
             "INSERT INTO search.span_embeddings (trace_id, span_id, chunk_idx, session_id, model, content_hash, embedding) VALUES ('t0', 's0', 1, %s, 'embeddinggemma', 'h', %s)",
             (ids[0], topics[0].astype(np.float32)),
         )
+        cursor.execute(
+            "UPDATE tapes_v1.sessions SET turn_count = 3, total_cost_usd = 0.125, derived_status = 'completed', derived_model = 'opus', parent_session_id = %s WHERE id = %s",
+            (ids[1], ids[0]),
+        )
+        # Session 0's first turn is synthetic and its second has no prompt; the third is its first prompt.
+        cursor.executemany(
+            "INSERT INTO tapes_v1.span_turns (trace_id, session_id, user_prompt, synthetic, started_at) VALUES (%s, %s, %s, %s, %s)",
+            [
+                ("p0", ids[0], "summary of earlier work", "post-compaction", datetime(2026, 10, 31, 1, tzinfo=UTC)),
+                ("p1", ids[0], "", "", datetime(2026, 10, 31, 2, tzinfo=UTC)),
+                ("p2", ids[0], "<system-reminder>\nhidden\n</system-reminder>\nTune the map clusters", "", datetime(2026, 10, 31, 3, tzinfo=UTC)),
+                ("p3", ids[0], "Later prompt", "", datetime(2026, 10, 31, 4, tzinfo=UTC)),
+            ],
+        )
     return ids
 
 
@@ -120,7 +162,7 @@ def test_one_refresh_with_exactly_the_deployments_grants(provisioned):
     with psycopg.connect(map_url) as conn, pytest.raises(psycopg.errors.InsufficientPrivilege):
         conn.execute("SELECT 1 FROM search.span_embeddings LIMIT 1")
 
-    rows = fetch_centroids(map_url, EMBEDDINGS_VIEW, SESSIONS)
+    rows = fetch_centroids(map_url, EMBEDDINGS_VIEW, SESSIONS, TURNS)
     result = build_map(rows, datetime.now(UTC))
 
     assert result["model"] == "embeddinggemma"
@@ -132,6 +174,12 @@ def test_one_refresh_with_exactly_the_deployments_grants(provisioned):
     assert first["title"] == "harness-0000"
     assert points[str(ids[1])]["title"] == "topic 1"
     assert first["last_seen_at"] == "2026-11-01T00:00:00Z"
+    assert first["prompt"] == "Tune the map clusters"
+    assert points[str(ids[1])]["prompt"] == ""
+    assert (first["turn_count"], first["cost_usd"], first["status"], first["model"]) == (3, 0.125, "completed", "opus")
+    assert first["parent_session_id"] == str(ids[1])
+    assert first["started_at"] == "2026-10-31T00:00:00Z"
+    assert first["ended_at"] is None
 
     coords = np.array([[p["x"], p["y"]] for p in result["points"]])
     topic = np.array([int(uuid.UUID(p["session_id"]).int - 1) % 2 for p in result["points"]])
@@ -142,7 +190,7 @@ def test_one_refresh_with_exactly_the_deployments_grants(provisioned):
 def test_a_missing_view_fails_with_the_postgres_error(provisioned):
     _, url, _ = provisioned
     with pytest.raises(psycopg.errors.UndefinedTable, match="search_contract_v2"):
-        fetch_centroids(url, "search_contract_v2.span_embeddings", SESSIONS)
+        fetch_centroids(url, "search_contract_v2.span_embeddings", SESSIONS, TURNS)
 
 
 def test_provisioning_survives_a_search_layout_change(provisioned):
@@ -157,3 +205,4 @@ def test_provisioning_survives_a_search_layout_change(provisioned):
         admin.rollback()
     assert owner == ("cassette_search",)
     assert role == ("postgres",)
+

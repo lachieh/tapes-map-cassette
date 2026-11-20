@@ -13,7 +13,7 @@ port = 9997
 
 [depends]
 core = "v1"
-views = ["sessions"]
+views = ["sessions", "span_turns"]
 
 [api]
 health = "/ping"

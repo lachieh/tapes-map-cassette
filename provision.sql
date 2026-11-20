@@ -35,11 +35,18 @@ BEGIN
     RAISE WARNING 'map contract view not updated: %', SQLERRM;
   END;
 
+  -- The tapes_v1 views the manifest lists under depends.views: sessions for
+  -- point fields, span_turns for each session's first prompt.
   IF to_regclass('tapes_v1.sessions') IS NULL THEN
-    RAISE NOTICE 'tapes_v1.sessions grant skipped: tapes has not migrated yet';
+    RAISE NOTICE 'tapes_v1 grants skipped: tapes has not migrated yet';
     RETURN;
   END IF;
   GRANT USAGE ON SCHEMA tapes_v1 TO cassette_map;
   GRANT SELECT ON tapes_v1.sessions TO cassette_map;
+  IF to_regclass('tapes_v1.span_turns') IS NULL THEN
+    RAISE NOTICE 'tapes_v1 span grants skipped: tapes has not created its span views yet';
+    RETURN;
+  END IF;
+  GRANT SELECT ON tapes_v1.span_turns TO cassette_map;
 END
 $$;

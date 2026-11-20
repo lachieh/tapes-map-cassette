@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
+from decimal import Decimal
 from uuid import UUID
 
 import numpy as np
@@ -83,14 +84,62 @@ def test_map_point_shape():
                 "harness_id": "",
                 "cwd": "",
                 "title": "00000000-0000-0000-0000-000000000001",
+                "prompt": "",
+                "started_at": None,
                 "last_seen_at": "2026-11-01T12:00:00Z",
+                "ended_at": None,
+                "status": "",
+                "model": "",
+                "parent_session_id": None,
+                "turn_count": 0,
+                "duration_ns": 0,
+                "cost_usd": 0.0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "tool_error_count": 0,
             }
         ],
     }
 
 
+def test_map_point_carries_the_session_summary():
+    started = datetime(2026, 11, 1, 9, 30, tzinfo=timezone(timedelta(hours=10)))
+    row = session(
+        1,
+        started_at=started,
+        ended_at=SEEN,
+        turn_count=4,
+        total_cost_usd=Decimal("1.2345"),
+        total_input_tokens=1000,
+        total_output_tokens=200,
+        tool_error_count=2,
+        derived_status="completed",
+        duration_ns=5_000_000_000,
+        derived_model="claude-opus-5-5",
+        parent_session_id=UUID(int=9),
+        prompt="<system-reminder>\nignore me\n</system-reminder>\nFix the flaky login test in src/auth/login.ts " + "x" * 300,
+    )
+    point = build_map([row], SEEN)["points"][0]
+    assert point["started_at"] == "2026-10-31T23:30:00Z"
+    assert point["ended_at"] == "2026-11-01T12:00:00Z"
+    assert (point["turn_count"], point["input_tokens"], point["output_tokens"], point["tool_error_count"]) == (4, 1000, 200, 2)
+    assert point["cost_usd"] == 1.2345
+    assert (point["status"], point["model"], point["duration_ns"]) == ("completed", "claude-opus-5-5", 5_000_000_000)
+    assert point["parent_session_id"] == "00000000-0000-0000-0000-000000000009"
+    assert point["prompt"].startswith("Fix the flaky login test in xxx")
+    assert len(point["prompt"]) == 200
+    assert point["prompt"].endswith("…")
+
+
 def test_empty_map():
-    assert build_map([], SEEN) == {"computed_at": "2026-11-01T12:00:00Z", "model": "", "method": "umap", "dimensions": 2, "session_count": 0, "points": []}
+    assert build_map([], SEEN) == {
+        "computed_at": "2026-11-01T12:00:00Z",
+        "model": "",
+        "method": "umap",
+        "dimensions": 2,
+        "session_count": 0,
+        "points": [],
+    }
 
 
 def test_title_takes_the_first_non_blank_name():

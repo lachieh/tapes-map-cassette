@@ -28,7 +28,7 @@ def main() -> int:
 
     store.wait_for_db(url, retry=settings["wait_for_db"])
 
-    state = MapState(lambda: store.fetch_centroids(url, settings["embeddings_view"], settings["sessions_table"]))
+    state = MapState(lambda: store.fetch_centroids(url, settings["embeddings_view"], settings["sessions_table"], store.TURNS_VIEW))
     state.db_reached = True
     stop = threading.Event()
     threading.Thread(target=state.run, args=(settings["refresh.interval"], stop), daemon=True).start()
