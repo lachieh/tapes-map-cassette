@@ -1,7 +1,7 @@
 [project]
 name = "tapes-map-cassette"
 version = "0.0.0"
-description = "Tapes cassette serving 3-D coordinates for every session, placed by meaning."
+description = "Tapes cassette serving a 2-D map of sessions, placed by meaning, and a session timeline."
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.5.5",
