@@ -6,7 +6,9 @@ tapes_v1 view: sessions is small enough to scan, span_turns is read through its
 """
 
 import re
+import logging
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -19,6 +21,8 @@ from tapes_map.projection import money, optional_rfc3339, rfc3339, session_title
 from tapes_map.store import TURNS_VIEW, relation
 from tapes_map.text import clean, truncate
 
+log = logging.getLogger(__name__)
+
 DEFAULT_WINDOW = timedelta(hours=24)
 MAX_WINDOW = timedelta(days=31)
 SESSION_CAP = 400
@@ -27,6 +31,14 @@ SPAN_CAP = 5000
 LINK_CAP = 5000
 TURN_PROMPT_CHARS = 160
 STATEMENT_TIMEOUT_MS = 15000
+# Counting a window's spans reads span rows from disk; on a slow volume that
+# can take minutes, so the counts get a short budget and are left out
+# (null) when it runs out. Counts of finished turns never change, so they are
+# kept and the next request only counts the rest.
+SPAN_COUNT_TIMEOUT_MS = 4000
+SPAN_COUNT_CACHE = 50_000
+# A large turn's spans can take a minute to read on the same volume.
+TURN_TIMEOUT_MS = 120_000
 MAX_CONNECTIONS = 4
 
 SESSIONS_VIEW = "tapes_v1.sessions"
@@ -143,6 +155,8 @@ class TimelineStore:
         self._url = url
         # Bounds how many requests hold a Postgres connection at once.
         self._slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+        self._counts: dict[str, tuple[int, int]] = {}
+        self._counts_lock = threading.Lock()
         names = {"sessions": sessions, "turns": turns, "spans": spans, "links": links}
         self._sql = {
             key: sql.SQL(text).format(**{name: relation(value) for name, value in names.items()})
@@ -156,11 +170,36 @@ class TimelineStore:
         }
 
     @contextmanager
-    def _cursor(self) -> Iterator[psycopg.Cursor]:
+    def _cursor(self, timeout_ms: int = STATEMENT_TIMEOUT_MS) -> Iterator[psycopg.Cursor]:
         with self._slots, psycopg.connect(
-            self._url, autocommit=True, connect_timeout=10, options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}"
+            self._url, autocommit=True, connect_timeout=10, options=f"-c statement_timeout={timeout_ms}"
         ) as conn, conn.cursor() as cursor:
             yield cursor
+
+    def _span_counts(self, cursor: psycopg.Cursor, turns: list[tuple]) -> dict[str, tuple[int, int]]:
+        with self._counts_lock:
+            counts = {row[0]: self._counts[row[0]] for row in turns if row[0] in self._counts}
+        missing = [row[0] for row in turns if row[0] not in counts]
+        if not missing:
+            return counts
+        try:
+            cursor.execute(sql.SQL("SET statement_timeout = {}").format(sql.Literal(SPAN_COUNT_TIMEOUT_MS)))
+            cursor.execute(self._sql["span_counts"], {"traces": missing})
+            fresh = {trace: (total, errors) for trace, total, errors in cursor}
+        except psycopg.errors.QueryCanceled:
+            log.warning("span counts for %d turns ran past %d ms; serving the timeline without them", len(missing), SPAN_COUNT_TIMEOUT_MS)
+            return counts
+        finally:
+            cursor.execute(sql.SQL("SET statement_timeout = {}").format(sql.Literal(STATEMENT_TIMEOUT_MS)))
+        settled = time.time() - 600
+        with self._counts_lock:
+            for trace_id, _, _, _, _, _, ended, *_ in turns:
+                if trace_id in fresh and ended is not None and ended.timestamp() < settled:
+                    if len(self._counts) >= SPAN_COUNT_CACHE:
+                        self._counts.pop(next(iter(self._counts)))
+                    self._counts[trace_id] = fresh[trace_id]
+        # A turn with no span rows yet counts as zero.
+        return counts | {trace: fresh.get(trace, (0, 0)) for trace in missing}
 
     def timeline(self, since: datetime, until: datetime) -> dict[str, Any]:
         window = {"since": since, "until": until}
@@ -177,12 +216,11 @@ class TimelineStore:
                 truncated = truncated or len(turns) > TURN_CAP
                 turns = turns[:TURN_CAP]
             if turns:
-                cursor.execute(self._sql["span_counts"], {"traces": [row[0] for row in turns]})
-                counts = {trace: (total, errors) for trace, total, errors in cursor}
+                counts = self._span_counts(cursor, turns)
 
         by_session: dict[Any, list[dict[str, Any]]] = {}
         for trace_id, session_id, prompt, synthetic, status, started, ended, duration, cost, inputs, outputs in reversed(turns):
-            total, errors = counts.get(trace_id, (0, 0))
+            total, errors = counts.get(trace_id, (None, None))
             by_session.setdefault(session_id, []).append(
                 {
                     "trace_id": trace_id,
@@ -230,7 +268,7 @@ class TimelineStore:
 
     def turn(self, trace_id: str) -> dict[str, Any] | None:
         """The trace's spans and every link with an end in it; None when the trace has no spans."""
-        with self._cursor() as cursor:
+        with self._cursor(TURN_TIMEOUT_MS) as cursor:
             cursor.execute(self._sql["turn_spans"], {"trace": trace_id, "limit": SPAN_CAP + 1})
             spans = cursor.fetchall()
             if not spans:

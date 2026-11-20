@@ -30,6 +30,7 @@ def _object(properties: dict[str, Any]) -> dict[str, Any]:
 
 _STRING = {"type": "string"}
 _INTEGER = {"type": "integer"}
+_OPTIONAL_INTEGER = {"type": ["integer", "null"]}
 _NUMBER = {"type": "number"}
 _TIME = {"type": "string", "format": "date-time"}
 _UUID = {"type": "string", "format": "uuid"}
@@ -98,8 +99,8 @@ _TIMELINE_TURN = _object(
         "cost_usd": _NUMBER,
         "input_tokens": _INTEGER,
         "output_tokens": _INTEGER,
-        "span_count": _INTEGER,
-        "error_span_count": _INTEGER,
+        "span_count": _OPTIONAL_INTEGER,
+        "error_span_count": _OPTIONAL_INTEGER,
         "prompt": _STRING,
     }
 )
@@ -133,7 +134,6 @@ _TIMELINE = _object(
     }
 )
 
-_OPTIONAL_INTEGER = {"type": ["integer", "null"]}
 
 _TURN_SPAN = _object(
     {
