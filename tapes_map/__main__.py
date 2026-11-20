@@ -7,7 +7,8 @@ import threading
 from tapes_map import store
 from tapes_map.config import load_settings
 from tapes_map.manifest import load_manifest
-from tapes_map.service import MapState, make_server
+from tapes_map.service import MapState, Timeline, make_server
+from tapes_map.timeline import TimelineStore
 
 log = logging.getLogger("tapes_map")
 
@@ -33,7 +34,8 @@ def main() -> int:
     stop = threading.Event()
     threading.Thread(target=state.run, args=(settings["refresh.interval"], stop), daemon=True).start()
 
-    server = make_server(listen, manifest, state)
+    timeline = Timeline(TimelineStore(url, sessions=settings["sessions_table"]))
+    server = make_server(listen, manifest, state, timeline)
     # Python as PID 1 in a container ignores SIGTERM unless a handler is installed.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     log.info("map cassette listening on %s", listen)

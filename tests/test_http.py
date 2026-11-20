@@ -13,7 +13,7 @@ import pytest
 
 from tapes_map.manifest import MANIFEST_PATH, load_manifest
 from tapes_map.projection import SessionCentroid
-from tapes_map.service import MapState, make_server
+from tapes_map.service import MapState, Timeline, make_server
 
 
 def rows(count=20):
@@ -36,11 +36,19 @@ class FakeSource:
         return self.result
 
 
+class NoTimeline:
+    def timeline(self, since, until):
+        raise AssertionError("not used")
+
+    def turn(self, trace_id):
+        raise AssertionError("not used")
+
+
 @pytest.fixture
 def cassette():
     source = FakeSource()
     state = MapState(source)
-    server = make_server("127.0.0.1:0", load_manifest(), state)
+    server = make_server("127.0.0.1:0", load_manifest(), state, Timeline(NoTimeline()))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{server.server_address[1]}", state, source
     server.shutdown()
@@ -178,7 +186,7 @@ def test_openapi_embeds_cassette_toml_and_documents_only_prefixed_operations(cas
     with MANIFEST_PATH.open("rb") as file:
         assert document["x-tapes-cassette"] == tomllib.load(file)
     assert document["openapi"].startswith("3.")
-    assert list(document["paths"]) == ["/api/map/points"]
+    assert list(document["paths"]) == ["/api/map/points", "/api/map/timeline", "/api/map/timeline/turns/{trace_id}"]
     operations = [op for item in document["paths"].values() for op in item.values()]
     assert all(op["responses"] for op in operations)
     assert len({op["operationId"] for op in operations}) == len(operations)
