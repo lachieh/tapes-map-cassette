@@ -53,3 +53,23 @@ def test_a_count_past_its_budget_leaves_counts_out():
     s = store()
     s._span_counts(FakeCursor(rows=[("a", 5, 1)]), [turn("a")])
     assert s._span_counts(FakeCursor(cancel=True), [turn("a"), turn("b")]) == {"a": (5, 1)}
+
+
+def test_batches_finished_before_the_budget_ran_out_are_kept(monkeypatch):
+    import tapes_map.timeline as timeline
+
+    monkeypatch.setattr(timeline, "SPAN_COUNT_BATCH", 1)
+
+    class SlowSecondBatch(FakeCursor):
+        def execute(self, query, params=None):
+            if params and "traces" in params:
+                self.count_calls.append(list(params["traces"]))
+                if len(self.count_calls) > 1:
+                    raise psycopg.errors.QueryCanceled("timeout")
+                self.rows = [("a", 7, 0)]
+
+    s = store()
+    assert s._span_counts(SlowSecondBatch(), [turn("a"), turn("b")]) == {"a": (7, 0)}
+    again = FakeCursor(rows=[("b", 2, 0)])
+    assert s._span_counts(again, [turn("a"), turn("b")]) == {"a": (7, 0), "b": (2, 0)}
+    assert again.count_calls == [["b"]]

@@ -37,6 +37,7 @@ STATEMENT_TIMEOUT_MS = 15000
 # kept and the next request only counts the rest.
 SPAN_COUNT_TIMEOUT_MS = 4000
 SPAN_COUNT_CACHE = 50_000
+SPAN_COUNT_BATCH = 20
 # A large turn's spans can take a minute to read on the same volume.
 TURN_TIMEOUT_MS = 120_000
 MAX_CONNECTIONS = 4
@@ -182,15 +183,27 @@ class TimelineStore:
         missing = [row[0] for row in turns if row[0] not in counts]
         if not missing:
             return counts
+        # Count in small batches so a slow request still keeps what it finished.
+        fresh: dict[str, tuple[int, int]] = {}
+        counted: set[str] = set()
+        deadline = time.monotonic() + SPAN_COUNT_TIMEOUT_MS / 1000
         try:
-            cursor.execute(sql.SQL("SET statement_timeout = {}").format(sql.Literal(SPAN_COUNT_TIMEOUT_MS)))
-            cursor.execute(self._sql["span_counts"], {"traces": missing})
-            fresh = {trace: (total, errors) for trace, total, errors in cursor}
+            for start in range(0, len(missing), SPAN_COUNT_BATCH):
+                left_ms = int((deadline - time.monotonic()) * 1000)
+                if left_ms <= 50:
+                    break
+                batch = missing[start : start + SPAN_COUNT_BATCH]
+                cursor.execute(sql.SQL("SET statement_timeout = {}").format(sql.Literal(left_ms)))
+                cursor.execute(self._sql["span_counts"], {"traces": batch})
+                fresh.update({trace: (total, errors) for trace, total, errors in cursor})
+                counted.update(batch)
         except psycopg.errors.QueryCanceled:
-            log.warning("span counts for %d turns ran past %d ms; serving the timeline without them", len(missing), SPAN_COUNT_TIMEOUT_MS)
-            return counts
+            pass
         finally:
             cursor.execute(sql.SQL("SET statement_timeout = {}").format(sql.Literal(STATEMENT_TIMEOUT_MS)))
+        if len(counted) < len(missing):
+            log.info("counted spans for %d of %d turns within %d ms", len(counted), len(missing), SPAN_COUNT_TIMEOUT_MS)
+        missing = [trace for trace in missing if trace in counted]
         settled = time.time() - 600
         with self._counts_lock:
             for trace_id, _, _, _, _, _, ended, *_ in turns:
