@@ -165,6 +165,19 @@ the session has none.
 The endpoint returns `503 {"error": "..."}` until the first refresh succeeds.
 After a failed refresh the error is the Postgres error.
 
+### Caching
+
+A `200` carries `ETag` (a strong tag: the first 16 hex digits of the body's
+SHA-256), `Last-Modified` (`computed_at`) and
+`Cache-Control: private, max-age=300, stale-while-revalidate=3600`. The body
+includes `computed_at`, so every successful refresh produces a new tag.
+
+When any tag in `If-None-Match` matches, or it is `*`, the endpoint returns
+`304` with `ETag` and `Cache-Control` and no body. Tags are compared with any
+`W/` prefix removed, because Cloudflare and Envoy weaken ETags when they
+compress a response. A `503` carries `Cache-Control: no-store`. `HEAD` is
+supported on every path.
+
 Other endpoints, all `GET`:
 
 | Path | Response |

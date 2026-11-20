@@ -76,6 +76,7 @@ def openapi_document(manifest: dict[str, Any]) -> dict[str, Any]:
                             "description": "The latest projection",
                             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SessionMap"}}},
                         },
+                        "304": {"description": "The projection matches an ETag in If-None-Match"},
                         "503": {
                             "description": "No projection yet: the first refresh is running or failed",
                             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}},

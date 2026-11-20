@@ -1,9 +1,11 @@
+import hashlib
 import json
 import threading
 import tomllib
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from uuid import UUID
 
 import numpy as np
@@ -91,6 +93,66 @@ def test_a_failed_refresh_keeps_serving_the_previous_projection(cassette):
     source.result = RuntimeError("connection refused")
     state.refresh()
     assert get(base + "/api/map/points") == before
+
+
+def request(url, method="GET", **headers):
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, method=method, headers=headers)) as response:
+            return response.status, response.headers, response.read()
+    except urllib.error.HTTPError as error:
+        return error.code, error.headers, error.read()
+
+
+@pytest.fixture
+def refreshed(cassette):
+    base, state, source = cassette
+    source.result = rows()
+    state.refresh()
+    return base + "/api/map/points"
+
+
+def test_points_carry_cache_validators(refreshed):
+    status, headers, body = request(refreshed)
+    assert status == 200
+    assert headers["ETag"] == f'"{hashlib.sha256(body).hexdigest()[:16]}"'
+    assert headers["Cache-Control"] == "private, max-age=300, stale-while-revalidate=3600"
+    computed_at = datetime.fromisoformat(json.loads(body)["computed_at"])
+    assert parsedate_to_datetime(headers["Last-Modified"]) == computed_at.replace(microsecond=0)
+
+
+@pytest.mark.parametrize("form", ["{etag}", "W/{etag}", '"0000000000000000", {etag}', 'W/"0000000000000000",W/{etag}', "*"])
+def test_a_matching_if_none_match_is_304_without_a_body(refreshed, form):
+    etag = request(refreshed)[1]["ETag"]
+    status, headers, body = request(refreshed, **{"If-None-Match": form.format(etag=etag)})
+    assert (status, body) == (304, b"")
+    assert headers["ETag"] == etag
+    assert headers["Cache-Control"] == "private, max-age=300, stale-while-revalidate=3600"
+
+
+def test_a_stale_if_none_match_gets_the_new_projection(cassette, refreshed):
+    _, state, source = cassette
+    old = request(refreshed)[1]["ETag"]
+    source.result = rows(21)
+    state.refresh()
+    status, headers, body = request(refreshed, **{"If-None-Match": f"W/{old}"})
+    assert status == 200
+    assert headers["ETag"] != old
+    assert json.loads(body)["session_count"] == 21
+
+
+def test_503_is_not_stored(cassette):
+    status, headers, _ = request(cassette[0] + "/api/map/points", **{"If-None-Match": "*"})
+    assert status == 503
+    assert headers["Cache-Control"] == "no-store"
+    assert "ETag" not in headers
+
+
+def test_head_sends_the_get_headers_without_a_body(refreshed):
+    _, get_headers, body = request(refreshed)
+    status, headers, head_body = request(refreshed, method="HEAD")
+    assert (status, head_body) == (200, b"")
+    assert headers["ETag"] == get_headers["ETag"]
+    assert headers["Content-Length"] == str(len(body))
 
 
 def test_readyz_waits_for_the_database(cassette):
