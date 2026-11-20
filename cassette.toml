@@ -1,0 +1,45 @@
+kind = "cassette/v1alpha1"
+
+[cassette]
+name = "map"
+# Release builds stamp version and the image tag with the release tag (see Dockerfile).
+version = "0.0.0"
+display_name = "Session Map"
+description = "3-D coordinates for every tapes session, placed by the meaning of its embedded spans."
+license = "MIT"
+homepage = "https://github.com/lachieh/tapes-map-cassette"
+image = "ghcr.io/lachieh/tapes-map-cassette:v0.0.0"
+port = 9997
+
+[depends]
+core = "v1"
+views = ["sessions"]
+
+[api]
+health = "/ping"
+openapi = "/openapi"
+prefix_path = "api"
+
+[[config]]
+key = "embeddings_view"
+type = "string"
+default = "search_contract_v1.span_embeddings"
+description = "Relation with the search cassette's span embeddings (trace_id, span_id, session_id, model, embedding); may be schema-qualified."
+
+[[config]]
+key = "sessions_table"
+type = "string"
+default = "tapes_v1.sessions"
+description = "Tapes session relation to read titles, harness, cwd, and last-seen time from; may be schema-qualified."
+
+[[config]]
+key = "refresh.interval"
+type = "duration"
+default = "1h"
+description = "How often to recompute the projection from every session's embeddings."
+
+[[config]]
+key = "wait_for_db"
+type = "bool"
+default = false
+description = "Retry an unreachable Postgres at startup with backoff instead of exiting."
