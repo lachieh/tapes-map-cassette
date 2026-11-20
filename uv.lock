@@ -460,6 +460,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pgvector" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "scikit-learn" },
     { name = "umap-learn" },
 ]
 
@@ -473,6 +474,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.5.5" },
     { name = "pgvector", specifier = ">=0.5.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.9" },
+    { name = "scikit-learn", specifier = ">=1.9.1" },
     { name = "umap-learn", specifier = ">=0.6.0" },
 ]
 

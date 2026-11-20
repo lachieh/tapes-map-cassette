@@ -1,6 +1,6 @@
 import pytest
 
-from tapes_map.text import clean, truncate
+from tapes_map.text import clean, tokens, truncate
 
 
 @pytest.mark.parametrize(
@@ -24,6 +24,11 @@ from tapes_map.text import clean, truncate
 )
 def test_clean_drops_harness_markup(raw, expected):
     assert clean(raw) == expected
+
+
+def test_tokens_are_lowercase_three_letter_words_without_stopwords():
+    text = "Please fix the Kubernetes CI in <tag>Hidden</tag> https://x.dev/ok and add Grafana dashboards, OK? id 1234567f"
+    assert tokens(text) == ["kubernetes", "grafana", "dashboards"]
 
 
 def test_truncate_marks_the_cut():

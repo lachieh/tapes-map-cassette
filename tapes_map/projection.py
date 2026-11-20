@@ -8,7 +8,8 @@ from uuid import UUID
 import numpy as np
 import umap
 
-from tapes_map.text import clean, truncate
+from tapes_map.clusters import cluster, describe
+from tapes_map.text import clean, tokens, truncate
 
 RANDOM_STATE = 42
 DIMENSIONS = 2
@@ -108,21 +109,26 @@ def build_map(rows: list[SessionCentroid], computed_at: datetime) -> dict[str, A
     # UMAP's layout depends on input order, so a fixed order keeps refits reproducible.
     chosen = sorted((row for row in rows if row.model == model), key=lambda row: row.session_id)
     coords = project(np.stack([row.centroid for row in chosen]) if chosen else np.empty((0, 2)))
+    labels = cluster(coords)
+    titles = [title(row) for row in chosen]
+    documents = [tokens(name) + tokens(row.prompt) for name, row in zip(titles, chosen, strict=True)]
     return {
         "computed_at": rfc3339(computed_at),
         "model": model,
         "method": "umap",
         "dimensions": DIMENSIONS,
         "session_count": len(chosen),
+        "clusters": describe(coords, labels, documents),
         "points": [
             {
                 "session_id": str(row.session_id),
                 "x": float(x),
                 "y": float(y),
+                "cluster": int(label),
                 "span_count": row.span_count,
                 "harness_id": row.harness_id or "",
                 "cwd": row.cwd or "",
-                "title": title(row),
+                "title": name,
                 "prompt": truncate(clean(row.prompt), POINT_PROMPT_CHARS),
                 "started_at": optional_rfc3339(row.started_at),
                 "last_seen_at": rfc3339(row.last_seen_at),
@@ -137,6 +143,6 @@ def build_map(rows: list[SessionCentroid], computed_at: datetime) -> dict[str, A
                 "output_tokens": row.total_output_tokens or 0,
                 "tool_error_count": row.tool_error_count or 0,
             }
-            for row, (x, y) in zip(chosen, coords, strict=True)
+            for row, name, label, (x, y) in zip(chosen, titles, labels, coords, strict=True)
         ],
     }

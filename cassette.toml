@@ -5,7 +5,7 @@ name = "map"
 # Release builds stamp version and the image tag with the release tag (see Dockerfile).
 version = "0.0.0"
 display_name = "Session Map"
-description = "2-D coordinates for every tapes session, placed by the meaning of its embedded spans."
+description = "2-D coordinates and labelled clusters for every tapes session, placed by the meaning of its embedded spans."
 license = "MIT"
 homepage = "https://github.com/lachieh/tapes-map-cassette"
 image = "ghcr.io/lachieh/tapes-map-cassette:v0.0.0"

@@ -75,11 +75,13 @@ def test_map_point_shape():
         "method": "umap",
         "dimensions": 2,
         "session_count": 1,
+        "clusters": [],
         "points": [
             {
                 "session_id": "00000000-0000-0000-0000-000000000001",
                 "x": 0.0,
                 "y": 0.0,
+                "cluster": -1,
                 "span_count": 3,
                 "harness_id": "",
                 "cwd": "",
@@ -138,6 +140,7 @@ def test_empty_map():
         "method": "umap",
         "dimensions": 2,
         "session_count": 0,
+        "clusters": [],
         "points": [],
     }
 

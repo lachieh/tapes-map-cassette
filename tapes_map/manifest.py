@@ -28,6 +28,7 @@ _POINT = {
         "session_id": {"type": "string", "format": "uuid"},
         "x": {"type": "number"},
         "y": {"type": "number"},
+        "cluster": {"type": "integer", "description": "A cluster id from clusters; -1 for points in no cluster."},
         "span_count": {"type": "integer"},
         "harness_id": {"type": "string"},
         "cwd": {"type": "string"},
@@ -49,6 +50,19 @@ _POINT = {
 }
 _POINT["required"] = list(_POINT["properties"])
 
+_CLUSTER = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "integer"},
+        "label": {"type": "string"},
+        "terms": {"type": "array", "items": {"type": "string"}},
+        "size": {"type": "integer"},
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+    },
+    "required": ["id", "label", "terms", "size", "x", "y"],
+}
+
 _MAP = {
     "type": "object",
     "properties": {
@@ -57,9 +71,10 @@ _MAP = {
         "method": {"type": "string", "enum": ["umap"]},
         "dimensions": {"type": "integer", "const": 2},
         "session_count": {"type": "integer"},
+        "clusters": {"type": "array", "items": {"$ref": "#/components/schemas/MapCluster"}},
         "points": {"type": "array", "items": {"$ref": "#/components/schemas/MapPoint"}},
     },
-    "required": ["computed_at", "model", "method", "dimensions", "session_count", "points"],
+    "required": ["computed_at", "model", "method", "dimensions", "session_count", "clusters", "points"],
 }
 
 
@@ -77,10 +92,11 @@ def openapi_document(manifest: dict[str, Any]) -> dict[str, Any]:
             points_path(manifest): {
                 "get": {
                     "operationId": "getMapPoints",
-                    "summary": "2-D coordinates for every session",
+                    "summary": "2-D coordinates and clusters for every session",
                     "description": (
                         "Each session's span embeddings averaged, projected to 2-D with UMAP "
-                        "(cosine), and scaled into [-1, 1]. Recomputed on an interval, not per request."
+                        "(cosine), and scaled into [-1, 1], then clustered with HDBSCAN and labelled "
+                        "by c-TF-IDF over titles and first prompts. Recomputed on an interval, not per request."
                     ),
                     "tags": ["map"],
                     "responses": {
@@ -97,5 +113,5 @@ def openapi_document(manifest: dict[str, Any]) -> dict[str, Any]:
                 }
             }
         },
-        "components": {"schemas": {"SessionMap": _MAP, "MapPoint": _POINT, "ErrorResponse": _ERROR}},
+        "components": {"schemas": {"SessionMap": _MAP, "MapPoint": _POINT, "MapCluster": _CLUSTER, "ErrorResponse": _ERROR}},
     }

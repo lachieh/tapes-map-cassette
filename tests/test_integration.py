@@ -180,6 +180,7 @@ def test_one_refresh_with_exactly_the_deployments_grants(provisioned):
     assert first["parent_session_id"] == str(ids[1])
     assert first["started_at"] == "2026-10-31T00:00:00Z"
     assert first["ended_at"] is None
+    assert {p["cluster"] for p in result["points"]} <= {c["id"] for c in result["clusters"]} | {-1}
 
     coords = np.array([[p["x"], p["y"]] for p in result["points"]])
     topic = np.array([int(uuid.UUID(p["session_id"]).int - 1) % 2 for p in result["points"]])
