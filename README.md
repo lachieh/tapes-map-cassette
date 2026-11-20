@@ -25,39 +25,9 @@ The map reads a view that **your deployment** creates instead:
 `search_contract_v1.span_embeddings`. The view is owned by `cassette_search` and
 runs with its owner's rights. `cassette_map` gets `SELECT` on the view and on
 `tapes_v1.sessions`, and nothing else. [`provision.sql`](provision.sql) creates
-both grants. Run it as a superuser after the `cassette_search` and `cassette_map`
-roles exist:
+the view and both grants. Run it as a superuser after the `cassette_search` and
+`cassette_map` roles exist.
 
-```sql
-DO $$
-BEGIN
-  IF to_regrole('cassette_search') IS NULL OR to_regrole('cassette_map') IS NULL THEN
-    RAISE NOTICE 'map contract view skipped: cassette_search or cassette_map role does not exist';
-    RETURN;
-  END IF;
-  IF to_regclass('search.span_embeddings') IS NULL THEN
-    RAISE NOTICE 'map contract view skipped: search.span_embeddings does not exist yet';
-    RETURN;
-  END IF;
-
-  CREATE SCHEMA IF NOT EXISTS search_contract_v1 AUTHORIZATION cassette_search;
-  SET LOCAL ROLE cassette_search;
-  CREATE OR REPLACE VIEW search_contract_v1.span_embeddings AS
-    SELECT trace_id, span_id, chunk_idx, session_id, model, embedded_at, embedding
-    FROM search.span_embeddings;
-  GRANT USAGE ON SCHEMA search_contract_v1 TO cassette_map;
-  GRANT SELECT ON search_contract_v1.span_embeddings TO cassette_map;
-  RESET ROLE;
-
-  IF to_regclass('tapes_v1.sessions') IS NULL THEN
-    RAISE NOTICE 'tapes_v1.sessions grant skipped: tapes has not migrated yet';
-    RETURN;
-  END IF;
-  GRANT USAGE ON SCHEMA tapes_v1 TO cassette_map;
-  GRANT SELECT ON tapes_v1.sessions TO cassette_map;
-END
-$$;
-```
 
 The script is idempotent and skips anything that does not exist yet, so you can
 run it at every Postgres start. On a fresh install the first runs skip until the
@@ -71,21 +41,36 @@ because no cassette publishes it. Its name is deployment configuration
 (`embeddings_view`), as the cassette contract recommends for a consumer that
 must not depend on a particular publisher.
 
-### The view depends on search's private table layout
+### The view couples the map to search's private table layout
 
-The view selects columns from a table that search-cassette treats as internal.
-If a search release renames or retypes `trace_id`, `span_id`, `chunk_idx`,
-`session_id`, `model`, `embedded_at` or `embedding`, the view breaks.
-`CREATE OR REPLACE VIEW` then fails in `provision.sql`, or the map's next
-refresh fails. Only the map is affected, and it fails loudly: `/api/map/points`
-returns 503 with the Postgres error. If an earlier refresh succeeded, the map
-keeps serving that result and logs each failed refresh.
+The view selects `trace_id`, `span_id`, `chunk_idx`, `session_id`, `model`,
+`embedded_at` and `embedding` from a table that search-cassette treats as
+internal. Postgres then ties the two together in both directions:
+
+| Change to `search.span_embeddings` | Effect |
+| --- | --- |
+| Add a column, or drop a column the view doesn't select | Works. |
+| Rename a selected column | Search works and the existing view keeps working, but re-running `provision.sql` can no longer re-create it. The script logs a warning and continues. |
+| Retype a selected column (such as a new embedding dimension), drop one, or drop the table | **Search's own change fails**: Postgres refuses to alter or drop what a view depends on. |
+
+The last row matters most. search-cassette refuses to start against a table
+with different dimensions and tells you to re-embed into a new table or drop
+the old one; with this view in place, drop the view first
+(`DROP VIEW search_contract_v1.span_embeddings`), make the search change, then
+run `provision.sql` again. Check the table layout before upgrading search.
+
+When the view is missing or unreadable, only the map is affected:
+`/api/map/points` returns 503 with the Postgres error, or keeps serving the last
+successful result and logs each failed refresh.
+
+`provision.sql` downgrades a failure to create the view to a warning, so a
+Postgres start hook that runs it cannot fail because of a search change. A hook
+that fails can stop Postgres from starting at all.
 
 This was tested against search-cassette v0.3.1: its image was run against an
 empty Postgres, and the table it created matches the view's columns and the
-table in `tests/test_integration.py`. Check the layout again before you upgrade search. If search ever
-publishes an equivalent view, set `embeddings_view` to that view and drop the
-deployment's view.
+table in `tests/test_integration.py`. If search ever publishes an equivalent
+view, set `embeddings_view` to that view and drop the deployment's view.
 
 ## Operating notes
 

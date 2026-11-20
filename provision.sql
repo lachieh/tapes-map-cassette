@@ -8,9 +8,9 @@
 -- with it, the view would be evaluated with cassette_map's rights and fail.
 --
 -- The column list is search-cassette's private layout (tested against
--- search-cassette v0.3.1). If a search release renames or retypes one of these
--- columns, CREATE OR REPLACE VIEW fails here, or the map's query fails at its
--- next refresh.
+-- search-cassette v0.3.1). If it changes, CREATE OR REPLACE VIEW fails; the
+-- failure is downgraded to a warning so a Postgres start hook running this
+-- script never fails because of it. See the README for what the view blocks.
 DO $$
 BEGIN
   IF to_regrole('cassette_search') IS NULL OR to_regrole('cassette_map') IS NULL THEN
@@ -22,14 +22,18 @@ BEGIN
     RETURN;
   END IF;
 
-  CREATE SCHEMA IF NOT EXISTS search_contract_v1 AUTHORIZATION cassette_search;
-  SET LOCAL ROLE cassette_search;
-  CREATE OR REPLACE VIEW search_contract_v1.span_embeddings AS
-    SELECT trace_id, span_id, chunk_idx, session_id, model, embedded_at, embedding
-    FROM search.span_embeddings;
-  GRANT USAGE ON SCHEMA search_contract_v1 TO cassette_map;
-  GRANT SELECT ON search_contract_v1.span_embeddings TO cassette_map;
-  RESET ROLE;
+  BEGIN
+    CREATE SCHEMA IF NOT EXISTS search_contract_v1 AUTHORIZATION cassette_search;
+    SET LOCAL ROLE cassette_search;
+    CREATE OR REPLACE VIEW search_contract_v1.span_embeddings AS
+      SELECT trace_id, span_id, chunk_idx, session_id, model, embedded_at, embedding
+      FROM search.span_embeddings;
+    GRANT USAGE ON SCHEMA search_contract_v1 TO cassette_map;
+    GRANT SELECT ON search_contract_v1.span_embeddings TO cassette_map;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'map contract view not updated: %', SQLERRM;
+  END;
 
   IF to_regclass('tapes_v1.sessions') IS NULL THEN
     RAISE NOTICE 'tapes_v1.sessions grant skipped: tapes has not migrated yet';

@@ -143,3 +143,17 @@ def test_a_missing_view_fails_with_the_postgres_error(provisioned):
     _, url, _ = provisioned
     with pytest.raises(psycopg.errors.UndefinedTable, match="search_contract_v2"):
         fetch_centroids(url, "search_contract_v2.span_embeddings", SESSIONS)
+
+
+def test_provisioning_survives_a_search_layout_change(provisioned):
+    admin_url, _, _ = provisioned
+    with psycopg.connect(admin_url) as admin:
+        admin.execute("ALTER TABLE search.span_embeddings RENAME COLUMN model TO embedding_model")
+        admin.execute(PROVISION)
+        owner = admin.execute(
+            "SELECT viewowner FROM pg_views WHERE schemaname = 'search_contract_v1' AND viewname = 'span_embeddings'"
+        ).fetchone()
+        role = admin.execute("SELECT current_user").fetchone()
+        admin.rollback()
+    assert owner == ("cassette_search",)
+    assert role == ("postgres",)
